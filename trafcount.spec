@@ -1,13 +1,13 @@
 Name: trafcount
-Version: 7
-Release: 1.NSYS
+Version: 7.3
+Release: 2.NSYS
 Group: Applications/Internet
 Summary: Multiple Interfaces Traffic Counter
 License: GPL
 Source0: %{name}-%{version}.tar.gz
-Patch0: %{name}-7-centos.patch
+Patch0: %{name}-%{version}-centos.patch
 BuildRoot: /var/tmp/%{name}-root
-BuildRequires: iptables-devel net-snmp-libs
+BuildRequires: iptables-devel
 Requires: httpd iptables
 
 %description
@@ -16,9 +16,10 @@ Requires: httpd iptables
 %setup -q
 %patch0 -p1
 
-%install
-make clean all
+%build
+make
 
+%install
 %{__mkdir_p} $RPM_BUILD_ROOT/usr/sbin
 %{__mkdir_p} $RPM_BUILD_ROOT/var/lib/trafcount
 %{__mkdir_p} $RPM_BUILD_ROOT%{_sysconfdir}/cron.d

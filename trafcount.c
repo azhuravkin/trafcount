@@ -16,7 +16,7 @@
 #define OUT_OCTETS	16
 
 struct record {
-	unsigned date;
+	int date;
 	unsigned long in_count;
 	unsigned long out_count;
 	unsigned long long in_bytes;
@@ -29,10 +29,10 @@ struct interface {
 	struct interface *next;
 };
 
-int get_counts(unsigned, char *, char *, char *);
-int update_db(char *, unsigned, unsigned long, unsigned long);
-int search(FILE *fp, unsigned int date);
+int search(FILE *, int);
+int get_counts(int, char *, char *, char *);
 void free_interfaces(struct interface *);
+int update_db(char *, int, unsigned long, unsigned long);
 
 void free_interfaces(struct interface *head) {
 	struct interface *cur, *next;
@@ -43,23 +43,21 @@ void free_interfaces(struct interface *head) {
 	}
 }
 
-int search(FILE *database, unsigned date) {
+int search(FILE *database, int date) {
 	/* Ищем нужную позицию в db */
 	int i;
-	int fill = 0;
 	struct record rec;
-	unsigned dates[RECORDS];
+	int dates[RECORDS];
 
 	memset(&rec, 0, sizeof(struct record));
 
 	for (i = 0; ((i < RECORDS) && (!feof(database))); i++) {
 		fread(&rec, sizeof(struct record), 1, database);
-		if (rec.date) fill = 1;
 		dates[i] = rec.date;
 	}
 
 	/* Если db полностью пустая, переходим в начало файла */
-	if (!fill) {
+	if (dates[0] == 0) {
 		rewind(database);
 		return 0;
 	}
@@ -71,7 +69,7 @@ int search(FILE *database, unsigned date) {
 			return 1;
 		}
 
-	/* Если дата в текущей записи меньше чем в предыдущей, переходим на позицию текущей */
+	/* Если дата в последующей записи меньше чем в предыдущей, переходим на позицию последующей */
 	for (i = 1; i < RECORDS; i++)
 		if (dates[i] < dates[i - 1]) {
 			fseek(database, sizeof(struct record) * i, SEEK_SET);
@@ -83,35 +81,38 @@ int search(FILE *database, unsigned date) {
 	return 0;
 }
 
-int update_db(char *db, unsigned u_date, unsigned long in_count, unsigned long out_count) {
+int update_db(char *db, int date, unsigned long in_count, unsigned long out_count) {
 	FILE *fp;
-	struct record cur_record;
+	struct record cur;
 	int i;
-	
-	memset(&cur_record, 0, sizeof(struct record));
 
-	if (fp = fopen(db, "rb+")) {
-		/* Update db */
-		if (search(fp, u_date)) {
-			fread(&cur_record, sizeof(struct record), 1, fp);
-			/* Back to begin this record */
+	memset(&cur, 0, sizeof(struct record));
+
+	/* Если файл открылся на обновление - обновляем данные */
+	if ((fp = fopen(db, "rb+"))) {
+		if (search(fp, date)) {
+			/* Читаем одну запись с текущей позиции */
+			fread(&cur, sizeof(struct record), 1, fp);
+			/* И переходим на её начало */
 			fseek(fp, sizeof(struct record) * -1, SEEK_CUR);
 		}
 
-		cur_record.date = u_date;
-		if (cur_record.in_count && (cur_record.in_count < in_count))
-			cur_record.in_bytes += in_count - cur_record.in_count;
-		if (cur_record.out_count && (cur_record.out_count < out_count))
-			cur_record.out_bytes += out_count - cur_record.out_count;
-		cur_record.in_count = in_count;
-		cur_record.out_count = out_count;
+		/* Записываем обновлённые данные */
+		cur.date = date;
+		if (cur.in_count && (cur.in_count < in_count))
+			cur.in_bytes += in_count - cur.in_count;
+		if (cur.out_count && (cur.out_count < out_count))
+			cur.out_bytes += out_count - cur.out_count;
+		cur.in_count = in_count;
+		cur.out_count = out_count;
 
-		fwrite(&cur_record, sizeof(struct record), 1, fp);
+		fwrite(&cur, sizeof(struct record), 1, fp);
 
-	} else if (fp = fopen(db, "wb")) {
-		/* Initialize db */
+	/* Если файл открылся на запись, инициализируем его нулями */
+	} else if ((fp = fopen(db, "wb"))) {
 		for (i = 0; i < RECORDS; i++)
-			fwrite(&cur_record, sizeof(struct record), 1, fp);
+			fwrite(&cur, sizeof(struct record), 1, fp);
+	/* Файл не открылся ни на обновление ни на запись */
 	} else {
 		fprintf(stderr, "Error opening db file: %s\n", db);
 		return 1;
@@ -122,11 +123,12 @@ int update_db(char *db, unsigned u_date, unsigned long in_count, unsigned long o
 	return 0;
 }
 
-int get_counts(unsigned date, char *host, char *comm, char *intfs) {
+int get_counts(int date, char *host, char *comm, char *intfs) {
 	char *ifname;
 	char db[128];
-	short oper_status;
-	unsigned long in_count, out_count;
+	short oper_status = 0;
+	unsigned long in_count = 0;
+	unsigned long out_count = 0;
 	struct snmp_session session, *ss;
 	struct snmp_pdu *pdu, *response;
 	struct variable_list *var;
@@ -144,22 +146,22 @@ int get_counts(unsigned date, char *host, char *comm, char *intfs) {
 	snmp_sess_init(&session);
 	session.peername = host;
 	session.version = SNMP_VERSION_1;
-	session.community = comm ? comm : "public";
-	session.community_len = strlen(session.community);
+	session.community = (u_char *) comm;
+	session.community_len = strlen(comm);
 
-	/* Open the session */
+	/* Открываем snmp сессию */
 	if ((ss = snmp_open(&session)) == NULL) {
 		fprintf(stderr, "Error in snmp_open().\n");
 		return 1;
 	}
 
-	/* Read indexes */
 	snprintf(objid, MAX_OID_LEN, "%s.%u", BASE_OID, INDEXES);
 	read_objid(objid, index_oid, &index_oid_length);
 
 	memmove(var_oid, index_oid, index_oid_length * sizeof(oid));
 	var_oid_length = index_oid_length;
 
+	/* Получаем в цикле список всех интерфейсов и их индексов и сохряняем их в списке */
 	while (running) {
 		pdu = snmp_pdu_create(SNMP_MSG_GETNEXT);
 		snmp_add_null_var(pdu, var_oid, var_oid_length);
@@ -169,12 +171,15 @@ int get_counts(unsigned date, char *host, char *comm, char *intfs) {
 		if (status == STAT_SUCCESS && response->errstat == SNMP_ERR_NOERROR) {
 			for (var = response->variables; var; var = var->next_variable) {
 				if (!memcmp(var->name, index_oid, index_oid_length * sizeof(oid))) {
-					cur = malloc(sizeof(struct interface));
+					if ((cur = malloc(sizeof(struct interface))) == NULL) {
+						fprintf(stderr, "Error in malloc().\n");
+						return 1;
+					}
 					cur->index = var->name[index_oid_length];
-					snprintf(cur->name, var->val_len + 1, var->val.string);
+					snprintf(cur->name, var->val_len + 1, (char *) var->val.string);
 					cur->next = prev;
 					prev = cur;
-					
+
 					memmove(var_oid, var->name, var->name_length * sizeof(oid));
 					var_oid_length = var->name_length;
 				} else
@@ -184,11 +189,12 @@ int get_counts(unsigned date, char *host, char *comm, char *intfs) {
 			running = 0;
 	}
 
-	ifname = strtok(intfs, ",");
-
-	do {
-		for (running = 1, cur = prev; cur && running; cur = cur->next) {
-			if (!strcmp(cur->name, ifname)) {
+	/* Для каждого интерфейса, для которого нужно считать трафик */
+	for (ifname = strtok(intfs, ","); ifname; ifname = strtok(NULL, ",")) {
+		/* Для каждого интерфейса в списке */
+		for (running = 1, cur = prev; running && cur; cur = cur->next) {
+			/* Если имена интерфейсов совпадают */
+			if (!strcmp(ifname, cur->name)) {
 				pdu = snmp_pdu_create(SNMP_MSG_GET);
 
 				snprintf(objid, sizeof(objid), "%s.%u.%u", BASE_OID, STATUS, cur->index);
@@ -206,6 +212,7 @@ int get_counts(unsigned date, char *host, char *comm, char *intfs) {
 				status = snmp_synch_response(ss, pdu, &response);
 
 				if (status == STAT_SUCCESS && response->errstat == SNMP_ERR_NOERROR) {
+					/* Для каждого полученного значения */
 					for (var = response->variables; var; var = var->next_variable) {
 						switch (var->name[9]) {
 							case STATUS:
@@ -217,10 +224,9 @@ int get_counts(unsigned date, char *host, char *comm, char *intfs) {
 							case OUT_OCTETS:
 								out_count = *var->val.integer;
 								break;
-							default:
-								break;
 						}
 					}
+					/* Если интерфейс в состоянии UP */
 					if (oper_status == 1) {
 						snprintf(db, sizeof(db), "%s/%s/%s.db", DBDIR, host, ifname);
 						update_db(db, date, in_count, out_count);
@@ -237,7 +243,7 @@ int get_counts(unsigned date, char *host, char *comm, char *intfs) {
 				snmp_free_pdu(response);
 			}
 		}
-	} while (ifname = strtok(NULL, ","));
+	}
 
 	free_interfaces(prev);
 	return 0;
@@ -247,42 +253,45 @@ int main(int argc, char **argv) {
 	int i;
 	time_t t;
 	struct tm *tm;
-	char date[16];
-	unsigned u_date;
+	int date;
+	char date_str[16];
 	char *community;
 	char *interfaces;
 	char *at;
+	char arg[128];
 
 	if (argc < 2) {
-		fprintf(stderr, "Usage: %s host[:community]@ifname1[,ifname2 ...] ...\n", argv[0]);
-		exit(1);
+		fprintf(stderr, "Usage: %s host[:community]@ifname1[,ifname2,...] ...\n", argv[0]);
+		return 1;
 	}
 
+	/* Формируем текущую дату в формате YYYYMMDD */
 	t = time(NULL);
 	tm = localtime(&t);
-	if ((strftime(date, sizeof(date), "%Y%m%d", tm)) == 0) {
+	if ((strftime(date_str, sizeof(date_str), "%Y%m%d", tm)) == 0) {
 		fprintf(stderr, "Error in strftime()\n");
-		exit(1);
+		return 1;
 	}
 
-	init_snmp("trafcount");
-	u_date = (unsigned) strtol(date, NULL, 10);
+	date = atoi(date_str);
 
 	for (i = 1; i < argc; i++) {
-		if (at = strchr(argv[i], '@')) {
+		snprintf(arg, sizeof(arg), argv[i]);
+
+		if ((at = strchr(arg, '@'))) {
+			/* Если список интерфейсов пустой */
 			if (*(interfaces = at + 1) == '\0')
 				continue;
 			*at = '\0';
 		} else
 			continue;
 
-		if (community = strchr(argv[i], ':')) {
+		if ((community = strchr(arg, ':'))) {
 			*community = '\0';
 			community++;
 		}
 
-		if (get_counts(u_date, argv[i], community, interfaces))
-			continue;
+		get_counts(date, arg, community ? community : "public", interfaces);
 	}
 
 	return 0;

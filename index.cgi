@@ -12,14 +12,12 @@ my %FORM;
 
 &parse_form;
 
-if (($FORM{'host'}) && ($FORM{'intf'}) && ($FORM{'date'}) && ($FORM{'graph'})) {
+if (($FORM{'host'}) && ($FORM{'date'}) && ($FORM{'graph'})) {
     &show_graph;
-} elsif (($FORM{'host'}) && ($FORM{'intf'}) && ($FORM{'date'})) {
+} elsif (($FORM{'host'}) && ($FORM{'date'})) {
     &print_stats;
-} elsif (($FORM{'host'}) && ($FORM{'intf'})) {
-    &print_date;
 } elsif ($FORM{'host'}) {
-    &print_intf;
+    &print_date;
 } else {
     &print_host;
 }
@@ -86,52 +84,21 @@ sub print_host()
     opendir(DBDIR, $db_dir);
     foreach my $file (readdir(DBDIR))
     {
-	next unless ((-d "$db_dir/$file") && ($file !~ m/^\./));
-	$host[$i++] = $file;
+	next if ($file !~ m/^(.*)\.db$/);
+	$host[$i++] = $1;
     }
     closedir(DBDIR);
 
     &print_header;
 
     print '<tr><th class="header" align="center">No</th>';
-    print '<th class="header" align="center">Hostname</th></tr>';
+    print '<th class="header" align="center">Host</th></tr>';
 
     $i = 1;
     foreach my $host (sort @host)
     {
 	print "<tr><td class=\"data2\" align=\"right\">$i</td>\n";
 	print "<td class=\"data2\" align=\"left\"><font color=\"blue\"><a href=\"?host=$host\">$host</a></font></td></tr>\n";
-	$i++;
-    }
-
-    &print_end;
-}
-
-sub print_intf()
-{
-    my @intf;
-    my $i = 0;
-
-    opendir(DBDIR, "$db_dir/$FORM{'host'}");
-    foreach my $file (readdir(DBDIR))
-    {
-	next if ($file !~ m/^(.*)\.db$/);
-	$intf[$i++] = $1;
-    }
-    closedir(DBDIR);
-
-    &print_header;
-
-    print '<tr><th class="header" align="center">No</th>';
-    print '<th class="header" align="center">Hostname</th>';
-    print '<th class="header" align="center">Interface</th></tr>';
-
-    $i = 1;
-    foreach my $intf (sort @intf)
-    {
-	print "<tr><td class=\"data2\" align=\"right\">$i</td>\n";
-	print "<td class=\"data2\" align=\"left\">$FORM{'host'}</td>\n";
-	print "<td class=\"data2\" align=\"left\"><font color=\"blue\"><a href=\"?host=$FORM{'host'}&intf=$intf\">$intf</a></font></td></tr>\n";
 	$i++;
     }
 
@@ -150,15 +117,14 @@ sub print_date()
     print '<th class="header" align="center">&nbsp;</th>';
     print '<th class="header" align="center">Date</th>';
     print '<th class="header" align="center">Hostname</th>';
-    print '<th class="header" align="center">Interface</th>';
     print '<th class="header" align="center">In Bytes</th>';
     print '<th class="header" align="center">Out Bytes</th></tr>';
 
-    open(DB, "$db_dir/$FORM{'host'}/$FORM{'intf'}.db");
+    open(DB, "$db_dir/$FORM{'host'}.db");
 
     do {
-	read(DB, $record, 28);
-        my ($date, undef, undef, $in_a, $in_b, $out_a, $out_b) = unpack("IL6", $record);
+	read(DB, $record, 36);
+        my ($date, undef, undef, undef, undef, $in_a, $in_b, $out_a, $out_b) = unpack("IL8", $record);
 
 	if ($date) {
 	    $date =~ s/^(\d{4})(\d{2})\d{2}$/$1$2/;
@@ -171,14 +137,14 @@ sub print_date()
     close(DB);
 
     my $i = 1;
+
     foreach my $date (reverse sort keys %bytes_in) {
 	$date =~ m/^(\d{4})(\d{2})$/;
 
 	print "<tr><td class=\"data2\" align=\"right\">$i</td>\n";
-	print "<td class=\"data2\" align=\"right\"><a href=\"?host=$FORM{'host'}&intf=$FORM{'intf'}&date=$date&graph=1\"><img src=\"graph.png\" border=\"0\"></a></td>\n";
-	print "<td class=\"data2\" align=\"right\"><font color=\"blue\"><a href=\"?host=$FORM{'host'}&intf=$FORM{'intf'}&date=$date\">$2.$1</a></font></td>\n";
+	print "<td class=\"data2\" align=\"right\"><a href=\"?host=$FORM{'host'}&date=$date&graph=1\"><img src=\"graph.png\" border=\"0\"></a></td>\n";
+	print "<td class=\"data2\" align=\"right\"><font color=\"blue\"><a href=\"?host=$FORM{'host'}&date=$date\">$2.$1</a></font></td>\n";
 	print "<td class=\"data2\" align=\"left\">$FORM{'host'}</td>\n";
-	print "<td class=\"data2\" align=\"left\">$FORM{'intf'}</td>\n";
 	print "<td class=\"data2\" align=\"left\">" . &bytes_split($bytes_in{$date}) . "</td>\n";
 	print "<td class=\"data2\" align=\"left\">" . &bytes_split($bytes_out{$date}) . "</td>\n";
 	$i++;
@@ -198,16 +164,15 @@ sub print_stats()
     print '<tr><th class="header" align="center">No</th>';
     print '<th class="header" align="center">Date</th>';
     print '<th class="header" align="center">Hostname</th>';
-    print '<th class="header" align="center">Interface</th>';
     print '<th class="header" align="center">In Bytes</th>';
     print '<th class="header" align="center">Out Bytes</th></tr>';
 
-    open(DB, "$db_dir/$FORM{'host'}/$FORM{'intf'}.db");
+    open(DB, "$db_dir/$FORM{'host'}.db");
 
     do {
 	my $record;
-	read(DB, $record, 28);
-	my ($date, undef, undef, $in_a, $in_b, $out_a, $out_b) = unpack("IL6", $record);
+	read(DB, $record, 36);
+	my ($date, undef, undef, undef, undef, $in_a, $in_b, $out_a, $out_b) = unpack("IL8", $record);
 
 	if ($date) {
 	    $date =~ m/^(\d{4})(\d{2})\d{2}$/;
@@ -227,7 +192,6 @@ sub print_stats()
 	print "<tr><td class=\"data2\" align=\"right\">$i</td>\n";
 	print "<td class=\"data2\" align=\"left\">$3.$2.$1</td>\n";
 	print "<td class=\"data2\" align=\"left\">$FORM{'host'}</td>\n";
-	print "<td class=\"data2\" align=\"left\">$FORM{'intf'}</td>\n";
 	print "<td class=\"data2\" align=\"left\">" . &bytes_split($bytes_in{$record}) . "</td>\n";
 	print "<td class=\"data2\" align=\"left\">" . &bytes_split($bytes_out{$record}) . "</td></tr>\n";
     }
@@ -263,12 +227,12 @@ sub show_graph {
     my @input;
     my @output;
 
-    open(DB, "$db_dir/$FORM{'host'}/$FORM{'intf'}.db");
+    open(DB, "$db_dir/$FORM{'host'}.db");
 
     do {
 	my $record;
-	read(DB, $record, 28);
-	my ($date, undef, undef, $in_a, $in_b, $out_a, $out_b) = unpack("IL6", $record);
+	read(DB, $record, 36);
+	my ($date, undef, undef, undef, undef, $in_a, $in_b, $out_a, $out_b) = unpack("IL8", $record);
 
 	if ($date) {
 	    $date =~ m/^(\d{4})(\d{2})\d{2}$/;
@@ -295,7 +259,7 @@ sub show_graph {
     my @data = (\@labels, \@input, \@output);
 
     $obj->set (
-	'title'			=> "$FORM{'host'} ($FORM{'intf'})",
+	'title'			=> "$FORM{'host'}",
 	'sub_title'		=> $FORM{'date'},
 	'x_label'		=> "Days",
 	'y_label'		=> 'Megabytes',

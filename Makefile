@@ -1,15 +1,11 @@
 CC = gcc -Wall -O2 -g -ggdb
-LIBS = -lsnmp
-prefix = /usr/local
-sbindir = ${prefix}/sbin
+LIBS = -liptc
+DBDIR = "/var/lib/trafcount"
 
 all: trafcount
 
 trafcount: Makefile trafcount.c
-	$(CC) $(LIBS) -o trafcount trafcount.c
-
-install: trafcount
-	install -o root -s trafcount $(sbindir)
+	$(CC) -D'DBDIR=$(DBDIR)' -o trafcount trafcount.c $(LIBS)
 
 clean:
 	rm -f trafcount

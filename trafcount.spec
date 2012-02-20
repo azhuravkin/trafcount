@@ -1,13 +1,13 @@
 Name: trafcount
-Version: 5
-Release: NSYS
+Version: 6
+Release: 5.NSYS
 Group: Applications/Internet
 Summary: Multiple Interfaces Traffic Counter
 License: GPL
 Source0: %{name}-%{version}.tar.gz
 BuildRoot: /var/tmp/%{name}-root
-BuildRequires: net-snmp-devel net-snmp-libs
-Requires: httpd net-snmp-libs
+BuildRequires: iptables-devel
+Requires: httpd iptables
 
 %description
 
@@ -40,6 +40,9 @@ install -m 644 sarg.css graph.png $RPM_BUILD_ROOT/var/www/trafcount
 [ $RPM_BUILD_ROOT != "/" ] && rm -rf $RPM_BUILD_ROOT
 
 %changelog
+* Tue Nov 17 2009 Juravkin Alexander <rinus@nsys.by>
+- Get count from iptables.
+
 * Sun May 9 2009 Juravkin Alexander <rinus@nsys.by>
 - Support graphics for monthly statistic.
 

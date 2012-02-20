@@ -6,14 +6,14 @@
 #define SOURCE "/proc/net/dev"
 #define DBDIR "/var/lib/trafcount"
 
-int get_count(FILE *fp, const char dev[16], unsigned long int *u_in, unsigned long int *u_out);
+int get_counts(FILE *fp, const char dev[16], unsigned long int *in_count, unsigned long int *out_count);
 
 struct entry {
     unsigned int date;
     unsigned long int in_count;
     unsigned long int out_count;
-    unsigned long int in_bytes;
-    unsigned long int out_bytes;
+    unsigned long long int in_bytes;
+    unsigned long long int out_bytes;
 };
 
 int main(int argc, char **argv) {
@@ -27,8 +27,8 @@ int main(int argc, char **argv) {
     struct tm *tm;
     char date[16];
     unsigned int u_date;
-    unsigned long int u_in;
-    unsigned long int u_out;
+    unsigned long int in_count;
+    unsigned long int out_count;
     struct entry cur_entry;
 
     if (argc < 2) {
@@ -49,18 +49,18 @@ int main(int argc, char **argv) {
 	fprintf(stderr, "Error opening source file: %s\n", SOURCE);
 	exit(1);
     }
-    
+
     for (c = 1; c < argc; c++) {
-	u_in = 0;
-	u_out = 0;
-	
+	in_count = 0;
+	out_count = 0;
+
 	snprintf(dev, sizeof(dev), "%s:", argv[c]);
 
-	if (get_count(sfp, dev, &u_in, &u_out)) {
-    	    fprintf(stderr, "Error: empty count (%s)\n", argv[c]);
-    	    continue;
+	if (get_counts(sfp, dev, &in_count, &out_count)) {
+	    fprintf(stderr, "Error: device %s not exist\n", argv[c]);
+	    continue;
 	}
-    
+
 	snprintf(db, sizeof(db), "%s/%s.db", DBDIR, argv[c]);
 	memset(&cur_entry, 0, sizeof(struct entry));
 
@@ -74,39 +74,39 @@ int main(int argc, char **argv) {
 		/* Back to begin this entry */
 		fseek(dfp, sizeof(struct entry) * -1, SEEK_CUR);
 	    else if (feof(dfp)) {
-    		fprintf(stderr, "Error: db %s is full\n", db);
-    		fclose(dfp);
-    		continue;
+		fprintf(stderr, "Error: db %s is full\n", db);
+		fclose(dfp);
+		continue;
 	    }
-	
+
 	    cur_entry.date = u_date;
-	    if (cur_entry.in_count && (cur_entry.in_count < u_in))
-		cur_entry.in_bytes += u_in - cur_entry.in_count;
-	    if (cur_entry.out_count && (cur_entry.out_count < u_out))
-		cur_entry.out_bytes += u_out - cur_entry.out_count;
-	    cur_entry.in_count = u_in;
-	    cur_entry.out_count = u_out;
+	    if (cur_entry.in_count && (cur_entry.in_count < in_count))
+		cur_entry.in_bytes += in_count - cur_entry.in_count;
+	    if (cur_entry.out_count && (cur_entry.out_count < out_count))
+		cur_entry.out_bytes += out_count - cur_entry.out_count;
+	    cur_entry.in_count = in_count;
+	    cur_entry.out_count = out_count;
 
 	    fwrite(&cur_entry, sizeof(struct entry), 1, dfp);
-	
+
 	} else if (dfp = fopen(db, "wb")) {
 	    /* Initialize db */
 	    for (i = 0; i < 365 * 100; i++)
 		fwrite(&cur_entry, sizeof(struct entry), 1, dfp);
 	} else {
-    	    fprintf(stderr, "Error opening db file: %s\n", db);
-    	    continue;
+	    fprintf(stderr, "Error opening db file: %s\n", db);
+	    continue;
 	}
-	
+
 	fclose(dfp);
     }
-    
+
     fclose(sfp);
-    
+
     return 0;
 }
 
-int get_count(FILE *fp, const char dev[16], unsigned long int *u_in, unsigned long int *u_out) {
+int get_counts(FILE *fp, const char dev[16], unsigned long int *in_count, unsigned long int *out_count) {
     char *line;
     char buff[256];
     char *colon;
@@ -129,12 +129,12 @@ int get_count(FILE *fp, const char dev[16], unsigned long int *u_in, unsigned lo
     }
 
     rewind(fp);
-    
+
     if (!in || !out)
 	return 1;
-    
-    *u_in = strtoul(in, NULL, 10);
-    *u_out = strtoul(out, NULL, 10);
-    
+
+    *in_count = strtoul(in, NULL, 10);
+    *out_count = strtoul(out, NULL, 10);
+
     return 0;
 }

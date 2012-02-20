@@ -1,5 +1,9 @@
 #!/usr/bin/perl
 
+use bignum;
+
+my $offset = 1 << 32;
+
 my $db_dir = "/var/lib/trafcount";
 
 &parse_form;
@@ -33,9 +37,9 @@ sub bytes_split()
     } elsif ($size < $tb) {
         $return = sprintf ("%.2f%s", $size / $gb, 'G');
     } else {
-        $return = printf ("%.2f%s", $size / $tb, 'T');
+        $return = sprintf ("%.2f%s", $size / $tb, 'T');
     }
-    
+
     return $return;
 }
 
@@ -76,7 +80,7 @@ sub print_intf()
 	$i++;
     }
     closedir(DBDIR);
-    
+
     &print_header;
 
     print '<tr><th class="header" align="center">No</th>';
@@ -108,21 +112,22 @@ sub print_date()
     print '<th class="header" align="center">Out Bytes</th></tr>';
 
     open(DB, "$db_dir/${intf}.db");
-    read(DB, $entry, 20);
+    read(DB, $entry, 28);
 
-    my ($date, undef, undef, $in, $out) = unpack("I5", $entry);
+    my ($date, undef, undef, $in_a, $in_b, $out_a, $out_b) = unpack("IL6", $entry);
 
     while ($date && !eof(DB)) {
 	$date =~ s/^(\d{4})(\d{2})\d{2}$/$1$2/;
-	$bytes_in{$date} += $in;
-	$bytes_out{$date} += $out;
+	
+	$bytes_in{$date} += $in_b * $offset + $in_a;
+	$bytes_out{$date} += $out_b * $offset + $out_a;
 
-	read(DB, $entry, 20);
-	($date, undef, undef, $in, $out) = unpack("I5", $entry);
+	read(DB, $entry, 28);
+	($date, undef, undef, $in_a, $in_b, $out_a, $out_b) = unpack("IL6", $entry);
     }
 
     close(DB);
-    
+
     foreach $entry (sort keys %bytes_in) {
 	$i++;
 	$entry =~ s/^(\d{4})(\d{2})$/$1$2/;
@@ -151,24 +156,24 @@ sub print_stats()
     print '<th class="header" align="center">Out Bytes</th></tr>';
 
     open(DB, "$db_dir/${intf}.db");
-    read(DB, $entry, 20);
+    read(DB, $entry, 28);
 
-    my ($date, undef, undef, $in, $out) = unpack("I5", $entry);
+    my ($date, undef, undef, $in_a, $in_b, $out_a, $out_b) = unpack("IL6", $entry);
 
     while ($date && !eof(DB)) {
-        $date =~ m/^(\d{4})(\d{2})(\d{2})$/;        
+        $date =~ m/^(\d{4})(\d{2})(\d{2})$/;
         if ("$1$2" eq $monthly) {
 	    $i++;
-    
+
 	    print "<tr><td class=\"data2\" align=\"right\">$i</td>\n";
 	    print "<td class=\"data2\" align=\"left\">$3.$2.$1</td>\n";
 	    print "<td class=\"data2\" align=\"left\">$intf</td>\n";
-	    print "<td class=\"data2\" align=\"left\">" . &bytes_split($in) . "</td>\n";
-	    print "<td class=\"data2\" align=\"left\">" . &bytes_split($out) . "</td></tr>\n";
+	    print "<td class=\"data2\" align=\"left\">" . &bytes_split($in_b * $offset + $in_a) . "</td>\n";
+	    print "<td class=\"data2\" align=\"left\">" . &bytes_split($out_b * $offset + $out_a) . "</td></tr>\n";
 	}
 	
-	read(DB, $entry, 20);
-	($date, undef, undef, $in, $out) = unpack("I5", $entry);
+	read(DB, $entry, 28);
+	($date, undef, undef, $in_a, $in_b, $out_a, $out_b) = unpack("IL6", $entry);
     }
 
     close(DB);

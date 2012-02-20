@@ -1,0 +1,69 @@
+diff -urNp trafcount-7.orig/trafcount.c trafcount-7/trafcount.c
+--- trafcount-7.orig/trafcount.c	2010-03-18 12:13:35.000000000 +0200
++++ trafcount-7/trafcount.c	2010-03-18 13:10:50.000000000 +0200
+@@ -19,14 +19,14 @@
+ #define RECORDS (365 * 1)
+ 
+ struct record {
+-	__u32 date;
+-	__u64 in_count;
+-	__u64 out_count;
+-	__u64 in_bytes;
+-	__u64 out_bytes;
++	u_int32_t date;
++	u_int64_t in_count;
++	u_int64_t out_count;
++	u_int64_t in_bytes;
++	u_int64_t out_bytes;
+ };
+ 
+-static int search(FILE *database, __u32 date) {
++static int search(FILE *database, u_int32_t date) {
+ 	/* Ищем нужную позицию в db */
+ 	int i;
+ 	struct record rec;
+@@ -65,7 +65,7 @@ static int search(FILE *database, __u32 
+ 	return 0;
+ }
+ 
+-static int update_db(char *db, __u32 date, const char *chain, __u64 count) {
++static int update_db(char *db, u_int32_t date, const char *chain, u_int64_t count) {
+ 	FILE *fp;
+ 	struct record cur;
+ 	int i;
+@@ -128,8 +128,8 @@ static void check_dir(char *year, unsign
+ 	    mkdir(path, 0755);
+ }
+ 
+-static int get_counts(int date, char *year) {
+-	struct iptc_handle *h;
++static int get_counts(u_int32_t date, char *year) {
++	iptc_handle_t h;
+ 	const char *chain = NULL;
+ 
+ 	h = iptc_init("filter");
+@@ -137,13 +137,13 @@ static int get_counts(int date, char *ye
+ 	if (!h)
+ 		return 1;
+ 
+-	for (chain = iptc_first_chain(h); chain; chain = iptc_next_chain(h)) {
++	for (chain = iptc_first_chain(&h); chain; chain = iptc_next_chain(&h)) {
+ 		const struct ipt_entry *e;
+ 
+ 		if (strcmp(chain, FROM_CHAIN) && strcmp(chain, TO_CHAIN))
+ 			continue;
+ 
+-		for (e = iptc_first_rule(chain, h); e; e = iptc_next_rule(e, h)) {
++		for (e = iptc_first_rule(chain, &h); e; e = iptc_next_rule(e, &h)) {
+ 			char db[128];
+ 			if (e->ip.src.s_addr && !e->ip.dst.s_addr && strlen(e->ip.outiface) && !strlen(e->ip.iniface)) {
+ 				snprintf(db, sizeof(db), "%s/%s/%u.%u.%u.%u/%s.db", DBDIR, year, IP_PARTS(e->ip.src.s_addr), e->ip.outiface);
+@@ -157,7 +157,7 @@ static int get_counts(int date, char *ye
+ 		}
+ 	}
+ 
+-	iptc_free(h);
++	iptc_free(&h);
+ 
+ 	return 0;
+ }

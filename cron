@@ -1,1 +1,1 @@
-*/5 * * * * root /usr/sbin/trafcount
+#*/5 * * * * root /usr/sbin/trafcount

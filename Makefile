@@ -1,4 +1,4 @@
-CC = gcc -Wall -O2 -g -ggdb
+CC = gcc -Wall -O0 -g -ggdb
 LIBS = -liptc
 DBDIR = "/var/lib/trafcount"
 

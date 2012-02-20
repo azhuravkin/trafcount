@@ -19,22 +19,21 @@
 #define RECORDS (365 * 1)
 
 struct record {
-	u_int32_t date;
-	u_int64_t in_count;
-	u_int64_t out_count;
-	u_int64_t in_bytes;
-	u_int64_t out_bytes;
+	__u32 date;
+	__u64 in_count;
+	__u64 out_count;
+	__u64 in_bytes;
+	__u64 out_bytes;
 };
 
-static int search(FILE *database, u_int32_t date) {
+static int search(FILE *database, __u32 date) {
 	/* Ищем нужную позицию в db */
 	int i;
 	struct record rec;
-	u_int32_t dates[RECORDS];
+	int dates[RECORDS];
 
 	memset(&rec, 0, sizeof(struct record));
 
-	/* Сохраняем в массив даты записей */
 	for (i = 0; ((i < RECORDS) && (!feof(database))); i++) {
 		fread(&rec, sizeof(struct record), 1, database);
 		dates[i] = rec.date;
@@ -66,7 +65,7 @@ static int search(FILE *database, u_int32_t date) {
 	return 0;
 }
 
-static int update_db(char *db, u_int32_t date, const char *chain, u_int64_t count) {
+static int update_db(char *db, __u32 date, const char *chain, __u64 count) {
 	FILE *fp;
 	struct record cur;
 	int i;
@@ -114,8 +113,23 @@ static int update_db(char *db, u_int32_t date, const char *chain, u_int64_t coun
 	return 0;
 }
 
-static int get_counts(u_int32_t date) {
-	iptc_handle_t h;
+static void check_dir(char *year, unsigned long ip) {
+    struct stat st;
+    char path[128];
+
+    snprintf(path, sizeof(path), "%s/%s", DBDIR, year);
+
+    if (stat(path, &st) == -1)
+	    mkdir(path, 0755);
+
+    snprintf(path, sizeof(path), "%s/%s/%u.%u.%u.%u", DBDIR, year, IP_PARTS(ip));
+
+    if (stat(path, &st) == -1)
+	    mkdir(path, 0755);
+}
+
+static int get_counts(int date, char *year) {
+	struct iptc_handle *h;
 	const char *chain = NULL;
 
 	h = iptc_init("filter");
@@ -123,41 +137,50 @@ static int get_counts(u_int32_t date) {
 	if (!h)
 		return 1;
 
-	for (chain = iptc_first_chain(&h); chain; chain = iptc_next_chain(&h)) {
+	for (chain = iptc_first_chain(h); chain; chain = iptc_next_chain(h)) {
 		const struct ipt_entry *e;
 
 		if (strcmp(chain, FROM_CHAIN) && strcmp(chain, TO_CHAIN))
 			continue;
 
-		for (e = iptc_first_rule(chain, &h); e; e = iptc_next_rule(e, &h)) {
+		for (e = iptc_first_rule(chain, h); e; e = iptc_next_rule(e, h)) {
 			char db[128];
-			if (e->ip.src.s_addr && !e->ip.dst.s_addr) {
-				snprintf(db, sizeof(db), "%s/%u.%u.%u.%u.db", DBDIR, IP_PARTS(e->ip.src.s_addr));
+			if (e->ip.src.s_addr && !e->ip.dst.s_addr && strlen(e->ip.outiface) && !strlen(e->ip.iniface)) {
+				snprintf(db, sizeof(db), "%s/%s/%u.%u.%u.%u/%s.db", DBDIR, year, IP_PARTS(e->ip.src.s_addr), e->ip.outiface);
+				check_dir(year, e->ip.src.s_addr);
 				update_db(db, date, chain, e->counters.bcnt);
-			} else if (!e->ip.src.s_addr && e->ip.dst.s_addr) {
-				snprintf(db, sizeof(db), "%s/%u.%u.%u.%u.db", DBDIR, IP_PARTS(e->ip.dst.s_addr));
+			} else if (!e->ip.src.s_addr && e->ip.dst.s_addr && !strlen(e->ip.outiface) && strlen(e->ip.iniface)) {
+				snprintf(db, sizeof(db), "%s/%s/%u.%u.%u.%u/%s.db", DBDIR, year, IP_PARTS(e->ip.dst.s_addr), e->ip.iniface);
+				check_dir(year, e->ip.dst.s_addr);
 				update_db(db, date, chain, e->counters.bcnt);
 			}
 		}
 	}
 
-	iptc_free(&h);
+	iptc_free(h);
 
 	return 0;
 }
 
 int main(void) {
 	time_t t;
-	struct tm *tm;
 	char date[16];
+	char year[8];
 
+	time(&t);
 	/* Формируем текущую дату в формате YYYYMMDD */
-	t = time(NULL);
-	tm = localtime(&t);
-	if ((strftime(date, sizeof(date), "%Y%m%d", tm)) == 0) {
+	if ((strftime(date, sizeof(date), "%Y%m%d", localtime(&t))) == 0) {
 		fprintf(stderr, "Error in strftime()\n");
 		return 1;
 	}
 
-	return get_counts(atoi(date));
+	/* Формируем текущий год YYYY */
+	if ((strftime(year, sizeof(year), "%Y", localtime(&t))) == 0) {
+		fprintf(stderr, "Error in strftime()\n");
+		return 1;
+	}
+
+	get_counts(atoi(date), year);
+
+	return 0;
 }

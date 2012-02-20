@@ -1,1 +1,1 @@
-*/5 * * * * root /usr/sbin/trafcount eth0
+*/5 * * * * root /usr/sbin/trafcount localhost:public@lo,eth0

@@ -8,12 +8,14 @@ my $db_dir = "/var/lib/trafcount";
 
 &parse_form;
 
-if (($FORM{'intf'} ne "") && ($FORM{'date'} ne "")) {
-    &print_stats($FORM{'intf'}, $FORM{'date'});
-} elsif ($FORM{'intf'} ne "") {
-    &print_date($FORM{'intf'});
+if (($FORM{'host'} ne "") && ($FORM{'intf'} ne "") && ($FORM{'date'} ne "")) {
+    &print_stats($FORM{'host'}, $FORM{'intf'}, $FORM{'date'});
+} elsif (($FORM{'host'} ne "") && ($FORM{'intf'} ne "")) {
+    &print_date($FORM{'host'}, $FORM{'intf'});
+} elsif ($FORM{'host'} ne "") {
+    &print_intf($FORM{'host'});
 } else {
-    &print_intf;
+    &print_host;
 }
 
 exit;
@@ -66,13 +68,42 @@ Content-type: text/html\n\n
 _end_
 }
 
+sub print_host()
+{
+    my $host;
+    my @host;
+    my $i = 0;
+
+    opendir(DBDIR, $db_dir);
+    foreach my $file (readdir(DBDIR))
+    {
+	next unless ((-d "$db_dir/$file") && ($file !~ m/^\./));
+	$host[$i++] = $file;
+    }
+    closedir(DBDIR);
+
+    &print_header;
+
+    print '<tr><th class="header" align="center">No</th>';
+    print '<th class="header" align="center">Hostname</th></tr>';
+
+    $i = 0;
+    foreach $host (sort @host)
+    {
+	$i++;
+	print "<tr><td class=\"data2\" align=\"right\">$i</td>\n";
+	print "<td class=\"data2\" align=\"left\"><font color=\"blue\"><a href=\"?host=$host\">$host</a></font></td></tr>\n";
+    }
+}
+
 sub print_intf()
 {
+    my $host = shift;
     my $intf;
     my @intf;
     my $i = 0;
 
-    opendir(DBDIR, $db_dir);
+    opendir(DBDIR, "$db_dir/$host");
     foreach my $file (readdir(DBDIR))
     {
 	next if ($file !~ m/^(.*)\.db$/);
@@ -90,12 +121,13 @@ sub print_intf()
     {
 	$i++;
 	print "<tr><td class=\"data2\" align=\"right\">$i</td>\n";
-	print "<td class=\"data2\" align=\"left\"><font color=\"blue\"><a href=\"?intf=$intf\">$intf</a></font></td></tr>\n";
+	print "<td class=\"data2\" align=\"left\"><font color=\"blue\"><a href=\"?host=$host&intf=$intf\">$intf</a></font></td></tr>\n";
     }
 }
 
 sub print_date()
 {
+    my $host = shift;
     my $intf = shift;
     my $record;
     my $i = 0;
@@ -110,7 +142,7 @@ sub print_date()
     print '<th class="header" align="center">In Bytes</th>';
     print '<th class="header" align="center">Out Bytes</th></tr>';
 
-    open(DB, "$db_dir/${intf}.db");
+    open(DB, "$db_dir/$host/${intf}.db");
 
     do {
 	read(DB, $record, 28);
@@ -131,7 +163,7 @@ sub print_date()
 	$date =~ m/^(\d{4})(\d{2})$/;
 
 	print "<tr><td class=\"data2\" align=\"right\">$i</td>\n";
-	print "<td class=\"data2\" align=\"right\"><font color=\"blue\"><a href=\"?intf=$intf&date=$date\">$2.$1</a></font></td>\n";
+	print "<td class=\"data2\" align=\"right\"><font color=\"blue\"><a href=\"?host=$host&intf=$intf&date=$date\">$2.$1</a></font></td>\n";
 	print "<td class=\"data2\" align=\"left\">$intf</td>\n";
 	print "<td class=\"data2\" align=\"left\">" . &bytes_split($bytes_in{$date}) . "</td>\n";
 	print "<td class=\"data2\" align=\"left\">" . &bytes_split($bytes_out{$date}) . "</td>\n";
@@ -140,6 +172,7 @@ sub print_date()
 
 sub print_stats()
 {
+    my $host = shift;
     my $intf = shift;
     my $monthly = shift;
     my $record;
@@ -155,7 +188,7 @@ sub print_stats()
     print '<th class="header" align="center">In Bytes</th>';
     print '<th class="header" align="center">Out Bytes</th></tr>';
 
-    open(DB, "$db_dir/${intf}.db");
+    open(DB, "$db_dir/$host/${intf}.db");
 
     do {
 	read(DB, $record, 28);

@@ -1,4 +1,4 @@
 all:
-	gcc -o trafcount trafcount.c
+	gcc -lsnmp -o trafcount trafcount.c
 clean:
 	rm -f trafcount

@@ -20,7 +20,7 @@ exit;
 
 sub bytes_split()
 {
-    my $size = $_[0];
+    my $size = shift;
     my $return;
 
     my $kb = 1024;
@@ -71,13 +71,12 @@ sub print_intf()
     my $intf;
     my @intf;
     my $i = 0;
-    
+
     opendir(DBDIR, $db_dir);
-    foreach $file (readdir(DBDIR))
+    foreach my $file (readdir(DBDIR))
     {
 	next if ($file !~ m/^(.*)\.db$/);
-	$intf[$i] = $1;
-	$i++;
+	$intf[$i++] = $1;
     }
     closedir(DBDIR);
 
@@ -98,7 +97,7 @@ sub print_intf()
 sub print_date()
 {
     my $intf = shift;
-    my $entry;
+    my $record;
     my $i = 0;
     my %bytes_in;
     my %bytes_out;
@@ -112,31 +111,30 @@ sub print_date()
     print '<th class="header" align="center">Out Bytes</th></tr>';
 
     open(DB, "$db_dir/${intf}.db");
-    read(DB, $entry, 28);
 
-    my ($date, undef, undef, $in_a, $in_b, $out_a, $out_b) = unpack("IL6", $entry);
+    do {
+	read(DB, $record, 28);
+        my ($date, undef, undef, $in_a, $in_b, $out_a, $out_b) = unpack("IL6", $record);
 
-    while ($date && !eof(DB)) {
-	$date =~ s/^(\d{4})(\d{2})\d{2}$/$1$2/;
-	
-	$bytes_in{$date} += $in_b * $offset + $in_a;
-	$bytes_out{$date} += $out_b * $offset + $out_a;
+	if ($date) {
+	    $date =~ s/^(\d{4})(\d{2})\d{2}$/$1$2/;
 
-	read(DB, $entry, 28);
-	($date, undef, undef, $in_a, $in_b, $out_a, $out_b) = unpack("IL6", $entry);
-    }
+	    $bytes_in{$date} += $in_b * $offset + $in_a;
+	    $bytes_out{$date} += $out_b * $offset + $out_a;
+	}
+    } while (!eof(DB));
 
     close(DB);
 
-    foreach $entry (sort keys %bytes_in) {
+    foreach $date (reverse sort keys %bytes_in) {
 	$i++;
-	$entry =~ s/^(\d{4})(\d{2})$/$1$2/;
+	$date =~ m/^(\d{4})(\d{2})$/;
 
 	print "<tr><td class=\"data2\" align=\"right\">$i</td>\n";
-	print "<td class=\"data2\" align=\"right\"><font color=\"blue\"><a href=\"?intf=$intf&date=$entry\">$2.$1</a></font></td>\n";
+	print "<td class=\"data2\" align=\"right\"><font color=\"blue\"><a href=\"?intf=$intf&date=$date\">$2.$1</a></font></td>\n";
 	print "<td class=\"data2\" align=\"left\">$intf</td>\n";
-	print "<td class=\"data2\" align=\"left\">" . &bytes_split($bytes_in{$entry}) . "</td>\n";
-	print "<td class=\"data2\" align=\"left\">" . &bytes_split($bytes_out{$entry}) . "</td>\n";
+	print "<td class=\"data2\" align=\"left\">" . &bytes_split($bytes_in{$date}) . "</td>\n";
+	print "<td class=\"data2\" align=\"left\">" . &bytes_split($bytes_out{$date}) . "</td>\n";
     }
 }
 
@@ -144,8 +142,10 @@ sub print_stats()
 {
     my $intf = shift;
     my $monthly = shift;
-    my $entry;
+    my $record;
     my $i = 0;
+    my %bytes_in;
+    my %bytes_out;
 
     &print_header;
 
@@ -156,27 +156,32 @@ sub print_stats()
     print '<th class="header" align="center">Out Bytes</th></tr>';
 
     open(DB, "$db_dir/${intf}.db");
-    read(DB, $entry, 28);
 
-    my ($date, undef, undef, $in_a, $in_b, $out_a, $out_b) = unpack("IL6", $entry);
+    do {
+	read(DB, $record, 28);
+	my ($date, undef, undef, $in_a, $in_b, $out_a, $out_b) = unpack("IL6", $record);
 
-    while ($date && !eof(DB)) {
-        $date =~ m/^(\d{4})(\d{2})(\d{2})$/;
-        if ("$1$2" eq $monthly) {
-	    $i++;
-
-	    print "<tr><td class=\"data2\" align=\"right\">$i</td>\n";
-	    print "<td class=\"data2\" align=\"left\">$3.$2.$1</td>\n";
-	    print "<td class=\"data2\" align=\"left\">$intf</td>\n";
-	    print "<td class=\"data2\" align=\"left\">" . &bytes_split($in_b * $offset + $in_a) . "</td>\n";
-	    print "<td class=\"data2\" align=\"left\">" . &bytes_split($out_b * $offset + $out_a) . "</td></tr>\n";
+	if ($date) {
+	    $date =~ m/^(\d{4})(\d{2})\d{2}$/;
+	    if ("$1$2" eq $monthly) {
+		$bytes_in{$date} = $in_b * $offset + $in_a;
+		$bytes_out{$date} = $out_b * $offset + $out_a;
+	    }
 	}
-	
-	read(DB, $entry, 28);
-	($date, undef, undef, $in_a, $in_b, $out_a, $out_b) = unpack("IL6", $entry);
-    }
+    } while (!eof(DB));
 
     close(DB);
+
+    foreach $record (sort keys %bytes_in) {
+        $record =~ m/^(\d{4})(\d{2})(\d{2})$/;
+	$i++;
+
+	print "<tr><td class=\"data2\" align=\"right\">$i</td>\n";
+	print "<td class=\"data2\" align=\"left\">$3.$2.$1</td>\n";
+	print "<td class=\"data2\" align=\"left\">$intf</td>\n";
+	print "<td class=\"data2\" align=\"left\">" . &bytes_split($bytes_in{$record}) . "</td>\n";
+	print "<td class=\"data2\" align=\"left\">" . &bytes_split($bytes_out{$record}) . "</td></tr>\n";
+    }
 }
 
 sub parse_form {

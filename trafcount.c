@@ -5,10 +5,12 @@
 
 #define SOURCE "/proc/net/dev"
 #define DBDIR "/var/lib/trafcount"
+#define RECORDS (365 * 1)
 
 int get_counts(FILE *fp, const char dev[16], unsigned long int *in_count, unsigned long int *out_count);
+int search(FILE *fp, unsigned int date);
 
-struct entry {
+struct record {
     unsigned int date;
     unsigned long int in_count;
     unsigned long int out_count;
@@ -29,7 +31,7 @@ int main(int argc, char **argv) {
     unsigned int u_date;
     unsigned long int in_count;
     unsigned long int out_count;
-    struct entry cur_entry;
+    struct record cur_record;
 
     if (argc < 2) {
 	fprintf(stderr, "Usage: %s eth0 ...\n", argv[0]);
@@ -61,38 +63,32 @@ int main(int argc, char **argv) {
 	    continue;
 	}
 
+	memset(&cur_record, 0, sizeof(struct record));
 	snprintf(db, sizeof(db), "%s/%s.db", DBDIR, argv[c]);
-	memset(&cur_entry, 0, sizeof(struct entry));
 
 	if (dfp = fopen(db, "rb+")) {
 	    /* Update db */
-	    do
-		fread(&cur_entry, sizeof(struct entry), 1, dfp);
-	    while (!feof(dfp) && cur_entry.date && (cur_entry.date != u_date));
-	
-	    if (!cur_entry.date || (cur_entry.date == u_date))
-		/* Back to begin this entry */
-		fseek(dfp, sizeof(struct entry) * -1, SEEK_CUR);
-	    else if (feof(dfp)) {
-		fprintf(stderr, "Error: db %s is full\n", db);
-		fclose(dfp);
-		continue;
+
+	    if (search(dfp, u_date)) {
+		fread(&cur_record, sizeof(struct record), 1, dfp);
+		fseek(dfp, sizeof(struct record) * -1, SEEK_CUR);
 	    }
 
-	    cur_entry.date = u_date;
-	    if (cur_entry.in_count && (cur_entry.in_count < in_count))
-		cur_entry.in_bytes += in_count - cur_entry.in_count;
-	    if (cur_entry.out_count && (cur_entry.out_count < out_count))
-		cur_entry.out_bytes += out_count - cur_entry.out_count;
-	    cur_entry.in_count = in_count;
-	    cur_entry.out_count = out_count;
+	    cur_record.date = u_date;
+	    if (cur_record.in_count && (cur_record.in_count < in_count))
+		cur_record.in_bytes += in_count - cur_record.in_count;
+	    if (cur_record.out_count && (cur_record.out_count < out_count))
+		cur_record.out_bytes += out_count - cur_record.out_count;
+	    cur_record.in_count = in_count;
+	    cur_record.out_count = out_count;
 
-	    fwrite(&cur_entry, sizeof(struct entry), 1, dfp);
+	    /* Back to begin this record */
+	    fwrite(&cur_record, sizeof(struct record), 1, dfp);
 
 	} else if (dfp = fopen(db, "wb")) {
 	    /* Initialize db */
-	    for (i = 0; i < 365 * 100; i++)
-		fwrite(&cur_entry, sizeof(struct entry), 1, dfp);
+	    for (i = 0; i < RECORDS; i++)
+		fwrite(&cur_record, sizeof(struct record), 1, dfp);
 	} else {
 	    fprintf(stderr, "Error opening db file: %s\n", db);
 	    continue;
@@ -136,5 +132,45 @@ int get_counts(FILE *fp, const char dev[16], unsigned long int *in_count, unsign
     *in_count = strtoul(in, NULL, 10);
     *out_count = strtoul(out, NULL, 10);
 
+    return 0;
+}
+
+int search(FILE *fp, unsigned int date) {
+    /* Ищем нужную позицию в db */
+    int i;
+    int fill = 0;
+    struct record rec;
+    unsigned int dates[RECORDS];
+
+    memset(&rec, 0, sizeof(struct record));
+
+    for (i = 0; ((i < RECORDS) && (!feof(fp))); i++) {
+	fread(&rec, sizeof(struct record), 1, fp);
+	if (rec.date) fill = 1;
+	dates[i] = rec.date;
+    }
+
+    /* Если db полностью пустая, переходим в начало файла */
+    if (!fill) {
+	rewind(fp);
+	return 0;
+    }
+
+    /* Если в db есть нужная запись, переходим на эту позицию и возвращаем 1, чтобы считать запись */
+    for (i = 0; i < RECORDS; i++)
+	if (dates[i] == date) {
+	    fseek(fp, sizeof(struct record) * i, SEEK_SET);
+	    return 1;
+	}
+
+    /* Если дата в текущей записи меньше чем в предыдущей, переходим на позицию текущей */
+    for (i = 1; i < RECORDS; i++)
+	if (dates[i] < dates[i - 1]) {
+	    fseek(fp, sizeof(struct record) * i, SEEK_SET);
+	    return 0;
+	}
+
+    /* Либо переходим в начало файла */
+    rewind(fp);
     return 0;
 }
